@@ -32,12 +32,14 @@ int process_cigar(bam1_t *al,std::vector<int> &coords){
     bool spliced = false;
     bool first = true;
     int lol=0,rol=0;
+    int is = al->core.pos; // intron start
     for (uint8_t c=0;c<al->core.n_cigar;++c){
         uint32_t *cigar_full=bam_get_cigar(al);
         int opcode=bam_cigar_op(cigar_full[c]);
         int length=bam_cigar_oplen(cigar_full[c]);
 
         if (opcode==BAM_CINS){
+            is+=length;
             return false;
         }
         if (opcode==BAM_CDEL){
@@ -49,6 +51,7 @@ int process_cigar(bam1_t *al,std::vector<int> &coords){
         if (opcode == BAM_CMATCH) {
             rol+=length;
             lol+=length;
+            is+=length;
         }
         if (opcode == BAM_CREF_SKIP){
             spliced = true;
@@ -56,9 +59,11 @@ int process_cigar(bam1_t *al,std::vector<int> &coords){
                 coords.push_back(rol);
             }
             coords.push_back(lol);
-            coords.push_back(length);
+            coords.push_back(is);
+            coords.push_back(is+length+1);
             lol = 0;
             rol = 0;
+            is+=length;
             first = false;
         }
     }
@@ -136,7 +141,7 @@ int main(int argc, char** argv) {
         bool isSpliced = process_cigar(curAl,coords);
         if(isSpliced){
             bool found_wrong = false;
-            for(int i=0;i<coords.size();i+=3){
+            for(int i=0;i<coords.size();i+=4){
                 if(coords[i]<args.get_int(Opt::OVERHANG)||coords[i+2]<args.get_int(Opt::OVERHANG)){ // short overhang
                     found_wrong = true;
                     out_agg<<bam_get_qname(curAl)<<"\t"
@@ -144,11 +149,12 @@ int main(int argc, char** argv) {
                     <<curAl->core.pos<<"\t"
                     <<coords[i]<<"\t"
                     <<coords[i+1]<<"\t"
-                    <<coords[i+2]<<std::endl;
+                    <<coords[i+2]<<"\t"
+                    <<coords[i+3]<<std::endl;
                 }
             }
             if(found_wrong){
-                add_num_splice_tag(curAl,coords.size()/3);
+                add_num_splice_tag(curAl,coords.size()/4);
                 int ret_val = sam_write1(outSAM, outSAM_header, curAl);
                 if(!ret_val){
                     std::cerr<<"something wrong when writing the read"<<std::endl;
@@ -156,7 +162,7 @@ int main(int argc, char** argv) {
                 }
             }
             if(coords.size()/3>=args.get_int(Opt::NUM_SPLICE)){ // too many splice sites
-                add_num_splice_tag(curAl,coords.size()/3);
+                add_num_splice_tag(curAl,coords.size()/4);
                 int ret_val = sam_write1(outSAM_manyN, outSAM_manyN_header, curAl);
                 if(!ret_val){
                     std::cerr<<"something wrong when writing the read"<<std::endl;

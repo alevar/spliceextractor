@@ -12,6 +12,8 @@
 #include <math.h>
 #include "htslib/sam.h"
 
+#include "arg_parse.h"
+
 #define CMATCH  0
 #define CINS    1
 #define CDEL    2
@@ -74,14 +76,37 @@ void add_num_splice_tag(bam1_t *al, int numN){
     bam_aux_append(al,"ZZ",'i',4,(uint8_t*)&numN);
 }
 
+enum Opt {INPUT     = 'i',
+          OUTPUT    = 'o',
+          NUM_SPLICE= 'n',
+          OVERHANG  = 'v'};
+
 // spliceextractor in.bam/cram/sam out_basename max_overhang min_num_introns
 
 int main(int argc, char** argv) {
 
-    std::cout<<"working with: "<<argv[1]<<std::endl;
-    std::cout<<"writing output to: "<<argv[2]<<std::endl;
+    ArgParse args("spoon help");
+    args.add_string(Opt::INPUT,"input","","input alignment in BAM/CRAM format",true);
+    args.add_string(Opt::OUTPUT,"output","","basename of the output files",true);
+    args.add_int(Opt::NUM_SPLICE,"num-splice",2,"minimum number of splice junctions to extract reads into a separate BAM file",true);
+    args.add_int(Opt::OVERHANG,"overhang",5,"maximum overhang to consider for output",true);
 
-    std::string out_base(argv[2]);
+    if(argc == 1){
+        std::cerr<<args.get_help()<<std::endl;
+        exit(-1);
+    }
+
+    if(strcmp(argv[1],"--help")==0){
+        std::cerr<<args.get_help()<<std::endl;
+        exit(-1);
+    }
+
+    args.parse_args(argc,argv);
+
+    std::cout<<"working with: "<<args.get_string(Opt::INPUT)<<std::endl;
+    std::cout<<"writing output to: "<<args.get_string(Opt::OUTPUT)<<std::endl;
+
+    std::string out_base(args.get_string(Opt::OUTPUT));
     std::string out_agg_fname = out_base, out_sam_fname = out_base, out_sam_manyN_fname = out_base;
     out_agg_fname.append(".agg");
     out_sam_fname.append(".bam");
@@ -89,7 +114,7 @@ int main(int argc, char** argv) {
 
     std::ofstream out_agg(out_agg_fname);
 
-    samFile *al = hts_open(argv[1],"r");
+    samFile *al = hts_open(args.get_string(Opt::INPUT).c_str(),"r");
     bam_hdr_t *al_hdr = sam_hdr_read(al);
 
     samFile *outSAM=sam_open(out_sam_fname.c_str(),"wb");
@@ -108,9 +133,14 @@ int main(int argc, char** argv) {
         if(isSpliced){
             bool found_wrong = false;
             for(int i=0;i<coords.size();i+=3){
-                if(coords[i]<std::atoi(argv[3])||coords[i+2]<std::atoi(argv[3])){ // short overhang
+                if(coords[i]<args.get_int(Opt::OVERHANG)||coords[i+2]<args.get_int(Opt::OVERHANG)){ // short overhang
                     found_wrong = true;
-                    out_agg<<bam_get_qname(curAl)<<"\t"<<coords[i]<<"\t"<<coords[i+1]<<"\t"<<coords[i+2]<<std::endl;
+                    out_agg<<bam_get_qname(curAl)<<"\t"
+                    <<al_hdr->target_name[curAl->core.tid]<<"\t"
+                    <<curAl->core.pos<<"\t"
+                    <<coords[i]<<"\t"
+                    <<coords[i+1]<<"\t"
+                    <<coords[i+2]<<std::endl;
                 }
             }
             if(found_wrong){
@@ -121,7 +151,7 @@ int main(int argc, char** argv) {
                     exit(-1);
                 }
             }
-            if(coords.size()/3>=std::atoi(argv[4])){ // too many splice sites
+            if(coords.size()/3>=args.get_int(Opt::NUM_SPLICE)){ // too many splice sites
                 add_num_splice_tag(curAl,coords.size()/3);
                 int ret_val = sam_write1(outSAM_manyN, outSAM_manyN_header, curAl);
                 if(!ret_val){
@@ -131,10 +161,6 @@ int main(int argc, char** argv) {
             }
         }
     }
-    // TODO: output fastq files of wrong reads as well
-    // TODO: add argparse
-    // TODO: output all spliced reads
-    // TODO: output the same format as Martin did
     bam_destroy1(curAl);
 
     bam_hdr_destroy(al_hdr);

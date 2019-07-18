@@ -128,6 +128,10 @@ int main(int argc, char** argv) {
     bam1_t *curAl = bam_init1(); // initialize the alignment record
 
     while(sam_read1(al,al_hdr,curAl)>0) { // only perfom if unaligned flag is set to true
+        if (curAl->core.flag & 4) { // if read is unmapped
+            continue;
+        }
+
         std::vector<int> coords;
         bool isSpliced = process_cigar(curAl,coords);
         if(isSpliced){

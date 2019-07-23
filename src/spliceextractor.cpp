@@ -142,7 +142,7 @@ int main(int argc, char** argv) {
         if(isSpliced){
             bool found_wrong = false;
             for(int i=0;i<coords.size();i+=4){
-                if(coords[i]<args.get_int(Opt::OVERHANG)||coords[i+2]<args.get_int(Opt::OVERHANG)){ // short overhang
+                if(coords[i]<=args.get_int(Opt::OVERHANG)||coords[i+3]<=args.get_int(Opt::OVERHANG)){ // short overhang
                     found_wrong = true;
                     out_agg<<bam_get_qname(curAl)<<"\t"
                     <<al_hdr->target_name[curAl->core.tid]<<"\t"
